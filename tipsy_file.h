@@ -101,6 +101,8 @@ public:
 	const char* name;
 #ifdef USE_MPI
 	MPI_File src;
+	MPI_offset offset;
+	MPI_status status;
 #else 
 	std::ifstream src;
 #endif
@@ -156,6 +158,7 @@ public:
 #ifdef USE_MPI
 		comm = c;
 		rank = r;
+		MPI_File_open(comm, filename, MPI_MODE_RDONLY, MPI_INFO_NULL, &src);
 #else
 		rank = 0;
 		src.open(filename, std::ios::binary);
@@ -178,26 +181,31 @@ public:
 			pad = sizeof(int);
 		}
 #ifdef USE_MPI
+			int header_size = size(header)-pad;
 		if(rank==0)
 		{
-			// Read header on master
+			int read=0;
+			MPI_File_read_at(src, 0, (unsigned char*)&h, header_size, MPI_UNSIGNED_BYTE, &status); 
+			MPI_Get_count(&status, MPI_INT, &read);
+			printf("TipsyFile: Rank 0 read %d bytes for header size %d\n", read, header_size);
 		}
 #else		
 		src.read((char*)&h, sizeof(header)-pad);
 #endif
-		byteswap(&h.time);
-        	byteswap(&h.nbodies);
-       		byteswap(&h.ndim);
-        	byteswap(&h.nsph);
-        	byteswap(&h.ndark);
-        	byteswap(&h.nstar);
 
 #ifdef USE_MPI
 		// Broadcast header to everyone else
 		// MPI_Bcast
+        MPI_Bcast( &h, header_size, MPI_Datatype MPI_UNSIGNED_BYTE, 0, comm);
 #endif
+		byteswap(&h.time);
+        byteswap(&h.nbodies);
+       	byteswap(&h.ndim);
+        byteswap(&h.nsph);
+        byteswap(&h.ndark);
+        byteswap(&h.nstar);
 
-        	header_read = true;
+		header_read = true;
 	}
 
 	void report_header()
@@ -365,6 +373,7 @@ public:
 			    name, h.nbodies, h.nsph, h.ndark, h.nstar, local_nsph, local_ndark, local_nstar, (swap_endian) ? "yes" : "no");
 
 		// Close with MPI
+		MPI_File_close(&src); 
 #else
 		printf("TipsyFile: read file %s\nnbodies: %i\nnsph:    %i\nndark:   %i\nnstar:   %i\nswapped endian: %s\n", \
 			    name, h.nbodies, h.nsph, h.ndark, h.nstar, (swap_endian) ? "yes" : "no");
@@ -387,6 +396,7 @@ public:
 		{
 #ifdef USE_MPI
 			// Close with MPI
+			MPI_File_close(&src); 
 #else
 			src.close();
 #endif
