@@ -106,27 +106,37 @@ public:
 #endif
 	bool swap_endian;
 	bool header_read;
-	bool open;
+	bool is_open;
 	long local_nsph;
 	long local_ndark;
 	long local_nstar;
-#ifdef USE_MPI
 	int  rank;
+
+#ifdef USE_MPI
+	MPI_Comm comm;
 	long sph_start;
 	long dark_start;
 	long star_start;
 #endif
 
-	TipsyFile() { header_read = false; sph = NULL; dark = NULL; star = NULL; open = false;}
+	TipsyFile() { header_read = false; sph = NULL; dark = NULL; star = NULL; is_open = false;}
 
+#ifdef USE_MPI
+	TipsyFile(const char* filename, MPI_Comm comm, int rank, bool swap = true)
+#else
 	TipsyFile(const char* filename, bool swap = true)
+#endif
 	{
 		header_read = false; 
 		sph = NULL; 
 		dark = NULL; 
 		star = NULL;
-		open = false;
+		is_open = false;
+#ifdef USE_MPI
+		open(filename, comm, rank, swap);
+#else
 		open(filename, swap);
+#endif
 	}
 
 	// Create a new tipsy file
@@ -135,14 +145,19 @@ public:
 		// Set up header, particles, etc
 		// Also set 'swap endian'
 	}
-
+#ifdef USE_MPI
+	void open(const char* filename, MPI_Comm c, int r, bool swap = true)
+#else
 	void open(const char* filename, bool swap = true)
+#endif
 	{
-		if(open)
+		if(is_open)
 			ErrorMessage("TipsyFile: File %s is already open!\n", filename);
 #ifdef USE_MPI
-		
+		comm = c;
+		rank = r;
 #else
+		rank = 0;
 		src.open(filename, std::ios::binary);
 		if(!src.is_open())
 			ErrorMessage("TipsyFile: Cannot open file: %s\n", filename);
@@ -191,7 +206,7 @@ public:
 	if(rank==0)
 #endif
 		if(header_read)
-			printf("TipsyFile Name: %s\ntime: %f nbodies %d ndim %d\nngas: %d, ndark %d, nstar %d\n", \
+			printf("TipsyFile Name: %s\ntime: %f nbodies %d ndim %d\nnsph: %d, ndark %d, nstar %d\n", \
 					name, h.time, h.nbodies, h.ndim, h.nsph, h.ndark, h.nstar);
 		else
 			printf("TipsyFile: report_header(): havent read header yet\n");
@@ -199,6 +214,12 @@ public:
 
 	void read_sph()
 	{
+		if(!is_open)
+			ErrorMessage("TipsyFile: read_all(): file is not open\n");
+
+		if(!header_read)
+			read_header();
+
 #ifdef USE_MPI
 		// Set local nsph to nsph/nranks
 		local_nsph = h.nsph/nranks;
@@ -206,7 +227,7 @@ public:
 		local_nsph = std::min(h.nsph-start_nsph, local_nsph);
 #else
 		// Set local nsph to header nsph
-		local_nsph = h.nsph
+		local_nsph = h.nsph;
 #endif
 		if(local_nsph)
 		{
@@ -238,6 +259,12 @@ public:
 
 	void read_dark()
 	{
+		if(!is_open)
+			ErrorMessage("TipsyFile: read_all(): file is not open\n");
+
+		if(!header_read)
+			read_header();
+
 #ifdef USE_MPI
 		// Set local ndark to ndark/nranks
 		local_ndark = h.ndark/nranks;
@@ -245,7 +272,7 @@ public:
 		local_ndark = std::min(h.ndark-start_ndark, local_ndark);
 #else
 		// Set local ndark to header ndark
-		local_ndark = h.ndark
+		local_ndark = h.ndark;
 #endif
 		if(local_ndark)
 		{
@@ -277,6 +304,12 @@ public:
 
 	void read_star()
 	{
+		if(!is_open)
+			ErrorMessage("TipsyFile: read_all(): file is not open\n");
+
+		if(!header_read)
+			read_header();
+
 #ifdef USE_MPI
 		// Set local nstar to nstar/nranks
 		local_nstar = h.nstar/nranks;
@@ -284,7 +317,7 @@ public:
 		local_nstar = std::min(h.nstar-start_nstar, local_nstar);
 #else
 		// Set local nstar to header nstar
-		local_nstar = h.nstar
+		local_nstar = h.nstar;
 #endif
 		if(local_nstar)
 		{
@@ -317,13 +350,13 @@ public:
 	void read_all(bool hasPad = true)
 	{
 
-		if(open)
+		if(!is_open)
 			ErrorMessage("TipsyFile: read_all(): file is not open\n");
 
 		if(!header_read)
 			read_header(hasPad);
 
-		read_gas();
+		read_sph();
 		read_dark();
 		read_star();
 
@@ -339,7 +372,7 @@ public:
 		if(src.is_open())
 			src.close();
 #endif
-		open = false;
+		is_open = false;
 		
 	}
 
@@ -350,14 +383,14 @@ public:
 		if(sph) free(sph);
 		if(dark) free(dark);
 		if(star) free(star);
-		if(open)
+		if(is_open)
 		{
 #ifdef USE_MPI
 			// Close with MPI
 #else
 			src.close();
 #endif
-			open = false;
+			is_open = false;
 		}
 	}
 
