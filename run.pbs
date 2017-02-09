@@ -1,0 +1,10 @@
+#!/bin/bash
+#PBS -j oe
+#PBS -l nodes=4:ppn=1
+#PBS -l walltime=01:00:00
+#PBS -N io
+cd $PBS_O_WORKDIR
+##ulimit -c unlimited
+##export OMP_NUM_THREADS=22
+aprun -N 1 -n 4 ./iotipsy
+
