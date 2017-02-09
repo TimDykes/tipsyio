@@ -188,7 +188,7 @@ public:
 		{
 			int read=0;
 			MPI_File_read_at(src, 0, (unsigned char*)&h, header_size, MPI_BYTE, &status); 
-			MPI_Get_count(&status, MPI_INT, &read);
+			MPI_Get_count(&status, MPI_BYTE, &read);
 			printf("TipsyFile: Rank 0 read %d bytes for header size %d\n", read, header_size);
 		}
 #else		
