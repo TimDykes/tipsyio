@@ -6,5 +6,5 @@
 cd $PBS_O_WORKDIR
 ##ulimit -c unlimited
 ##export OMP_NUM_THREADS=22
-aprun -N 1 -n 4 ./iotipsy
+aprun -N 1 -n 4 ./iotipsy /lus/scratch/p02328/eris/ErisSAT_freq.000626
 
