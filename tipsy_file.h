@@ -33,12 +33,15 @@
 #include <stdlib.h>
 #include <math.h>
 #include <fstream>
+
+#ifdef USE_MPI
+#include "mpi.h"
+#endif
 			
 #define MAXDIM 3
 
 /* Hack in a definition for ErrorMessage to work aroudn missing debug include */
 #define ErrorMessage(...) {printf(__VA_ARGS__); exit(-1);}
-
 /* 
 	Structures for tipsy particle types & header
 */
@@ -96,11 +99,25 @@ public:
 
 	// Extra
 	const char* name;
+#ifdef USE_MPI
+	MPI_File src;
+#else 
 	std::ifstream src;
+#endif
 	bool swap_endian;
 	bool header_read;
+	bool open;
+	long local_nsph;
+	long local_ndark;
+	long local_nstar;
+#ifdef USE_MPI
+	int  rank;
+	long sph_start;
+	long dark_start;
+	long star_start;
+#endif
 
-	TipsyFile() { header_read = false; sph = NULL; dark = NULL; star = NULL;}
+	TipsyFile() { header_read = false; sph = NULL; dark = NULL; star = NULL; open = false;}
 
 	TipsyFile(const char* filename, bool swap = true)
 	{
@@ -108,6 +125,7 @@ public:
 		sph = NULL; 
 		dark = NULL; 
 		star = NULL;
+		open = false;
 		open(filename, swap);
 	}
 
@@ -120,12 +138,15 @@ public:
 
 	void open(const char* filename, bool swap = true)
 	{
-		if(src.is_open())
+		if(open)
 			ErrorMessage("TipsyFile: File %s is already open!\n", filename);
-
+#ifdef USE_MPI
+		
+#else
 		src.open(filename, std::ios::binary);
 		if(!src.is_open())
 			ErrorMessage("TipsyFile: Cannot open file: %s\n", filename);
+#endif
 
 		swap_endian = swap;		
 		name = filename;
@@ -141,20 +162,34 @@ public:
 		{
 			pad = sizeof(int);
 		}
+#ifdef USE_MPI
+		if(rank==0)
+		{
+			// Read header on master
+		}
+#else		
 		src.read((char*)&h, sizeof(header)-pad);
-
+#endif
 		byteswap(&h.time);
-        byteswap(&h.nbodies);
-        byteswap(&h.ndim);
-        byteswap(&h.nsph);
-        byteswap(&h.ndark);
-        byteswap(&h.nstar);
+        	byteswap(&h.nbodies);
+       		byteswap(&h.ndim);
+        	byteswap(&h.nsph);
+        	byteswap(&h.ndark);
+        	byteswap(&h.nstar);
 
-        header_read = true;
+#ifdef USE_MPI
+		// Broadcast header to everyone else
+		// MPI_Bcast
+#endif
+
+        	header_read = true;
 	}
 
 	void report_header()
 	{
+#ifdef USE_MPI
+	if(rank==0)
+#endif
 		if(header_read)
 			printf("TipsyFile Name: %s\ntime: %f nbodies %d ndim %d\nngas: %d, ndark %d, nstar %d\n", \
 					name, h.time, h.nbodies, h.ndim, h.nsph, h.ndark, h.nstar);
@@ -162,45 +197,60 @@ public:
 			printf("TipsyFile: report_header(): havent read header yet\n");
 	}
 
-	void read_all(bool hasPad = true)
+	void read_sph()
 	{
-
-		if(!src.is_open())
-			ErrorMessage("TipsyFile: read_all(): file is not open\n");
-
-		if(!header_read)
-			read_header(hasPad);
-
-		// Alloc
-		if(h.nsph > 0)
-			sph = (gas_particle*)malloc(h.nsph*sizeof(gas_particle));
-
-		if(h.ndark > 0)
-			dark = (dark_particle*)malloc(h.ndark*sizeof(dark_particle));
-
-		if(h.nstar > 0)
-			star = (star_particle*)malloc(h.nstar*sizeof(star_particle));
-
-		if( (h.nsph > 0 && sph == NULL) || (h.ndark > 0 && dark == NULL) || (h.nstar > 0 && star == NULL))
+#ifdef USE_MPI
+		// Set local nsph to nsph/nranks
+		local_nsph = h.nsph/nranks;
+		start_sph = local_nsph * rank;
+		local_nsph = std::min(h.nsph-start_nsph, local_nsph);
+#else
+		// Set local nsph to header nsph
+		local_nsph = h.nsph
+#endif
+		if(local_nsph)
 		{
-			// Couldnt allocate, cleanup and quit
-			close();
-			ErrorMessage("Could not allocate memory for particles...\n");
+			sph = (gas_particle*)malloc(local_nsph*sizeof(gas_particle));
+			if(!sph) ErrorMessage("Rank %d could not allocate memory", rank);
 		}
-
 		// Read sph
-		if(h.nsph)
+		if(local_nsph)
 		{
-			src.read((char*)sph, h.nsph * sizeof(gas_particle));
+#ifdef USE_MPI
+			// Seek to sph plus local sph start
+			// MPI Read
+#else
+			// Seek to file sph start
+			// ...
+			src.read((char*)sph, local_nsph * sizeof(gas_particle));
+#endif
 			if(swap_endian)
 			{
 				gas_particle* pp = sph;
-				for(int i = 0; i < h.nsph; i++, pp++)
+				for(int i = 0; i < local_nsph; i++, pp++)
 				{
 					for(unsigned j = 0; j < sizeof(gas_particle)/sizeof(float); j++)
 						byteswap(&((float*)pp)[j]);
 				}
 			}
+		}
+	}
+
+	void read_all(bool hasPad = true)
+	{
+
+		if(open)
+			ErrorMessage("TipsyFile: read_all(): file is not open\n");
+
+		if(!header_read)
+			read_header(hasPad);
+
+/*
+		if( (h.nsph > 0 && sph == NULL) || (h.ndark > 0 && dark == NULL) || (h.nstar > 0 && star == NULL))
+		{
+			// Couldnt allocate, cleanup and quit
+			close();
+			ErrorMessage("Could not allocate memory for particles...\n");
 		}
 
 
@@ -233,14 +283,21 @@ public:
 				}
 			}
 		}
+*/
 
+#ifdef USE_MPI
+		printf("TipsyFile: read file %s\nnbodies: %i\nnsph:    %i\nndark:   %i\nnstar:   %i\nswapped endian: %s\n", \
+			    name, h.nbodies, h.nsph, h.ndark, h.nstar, (swap_endian) ? "yes" : "no");
 
-
+		// Close file
+#else
 		printf("TipsyFile: read file %s\nnbodies: %i\nnsph:    %i\nndark:   %i\nnstar:   %i\nswapped endian: %s\n", \
 			    name, h.nbodies, h.nsph, h.ndark, h.nstar, (swap_endian) ? "yes" : "no");
 
 		if(src.is_open())
 			src.close();
+#endif
+		
 	}
 
 
@@ -250,7 +307,7 @@ public:
 		if(sph) free(sph);
 		if(dark) free(dark);
 		if(star) free(star);
-		if(src.is_open())
+		if(open)
 			src.close();
 	}
 
