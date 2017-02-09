@@ -236,6 +236,84 @@ public:
 		}
 	}
 
+	void read_dark()
+	{
+#ifdef USE_MPI
+		// Set local ndark to ndark/nranks
+		local_ndark = h.ndark/nranks;
+		start_dark = local_ndark * rank;
+		local_ndark = std::min(h.ndark-start_ndark, local_ndark);
+#else
+		// Set local ndark to header ndark
+		local_ndark = h.ndark
+#endif
+		if(local_ndark)
+		{
+			dark = (dark_particle*)malloc(local_ndark*sizeof(dark_particle));
+			if(!dark) ErrorMessage("Rank %d could not allocate memory", rank);
+		}
+		// Read dark
+		if(local_ndark)
+		{
+#ifdef USE_MPI
+			// Seek to dark plus local dark start
+			// MPI Read
+#else
+			// Seek to file dark start
+			// ...
+			src.read((char*)dark, local_ndark * sizeof(dark_particle));
+#endif
+			if(swap_endian)
+			{
+				dark_particle* pp = dark;
+				for(int i = 0; i < local_ndark; i++, pp++)
+				{
+					for(unsigned j = 0; j < sizeof(dark_particle)/sizeof(float); j++)
+						byteswap(&((float*)pp)[j]);
+				}
+			}
+		}
+	}
+
+	void read_star()
+	{
+#ifdef USE_MPI
+		// Set local nstar to nstar/nranks
+		local_nstar = h.nstar/nranks;
+		start_star = local_nstar * rank;
+		local_nstar = std::min(h.nstar-start_nstar, local_nstar);
+#else
+		// Set local nstar to header nstar
+		local_nstar = h.nstar
+#endif
+		if(local_nstar)
+		{
+			star = (star_particle*)malloc(local_nstar*sizeof(star_particle));
+			if(!star) ErrorMessage("Rank %d could not allocate memory", rank);
+		}
+		// Read star
+		if(local_nstar)
+		{
+#ifdef USE_MPI
+			// Seek to star plus local star start
+			// MPI Read
+#else
+			// Seek to file star start
+			// ...
+			src.read((char*)star, local_nstar * sizeof(star_particle));
+#endif
+			if(swap_endian)
+			{
+				star_particle* pp = star;
+				for(int i = 0; i < local_nstar; i++, pp++)
+				{
+					for(unsigned j = 0; j < sizeof(star_particle)/sizeof(float); j++)
+						byteswap(&((float*)pp)[j]);
+				}
+			}
+		}
+	}
+
 	void read_all(bool hasPad = true)
 	{
 
@@ -245,51 +323,15 @@ public:
 		if(!header_read)
 			read_header(hasPad);
 
-/*
-		if( (h.nsph > 0 && sph == NULL) || (h.ndark > 0 && dark == NULL) || (h.nstar > 0 && star == NULL))
-		{
-			// Couldnt allocate, cleanup and quit
-			close();
-			ErrorMessage("Could not allocate memory for particles...\n");
-		}
-
-
-		// Read dark
-		if(h.ndark)
-		{
-			src.read((char*)dark, h.ndark * sizeof(dark_particle));
-			if(swap_endian)
-			{
-				dark_particle* pp = dark;
-				for(int i = 0; i < h.ndark; i++, pp++)
-				{
-					for(unsigned j = 0; j < sizeof(dark_particle)/sizeof(float); j++)
-						byteswap(&((float*)pp)[j]);
-				}
-			}
-		}
-
-		// Read star
-		if(h.nstar)
-		{
-			src.read((char*)star, h.nstar * sizeof(star_particle));
-			if(swap_endian)
-			{
-				star_particle* pp = star;
-				for(int i = 0; i < h.nstar; i++, pp++)
-				{
-					for(unsigned j = 0; j < sizeof(star_particle)/sizeof(float); j++)
-						byteswap(&((float*)pp)[j]);
-				}
-			}
-		}
-*/
+		read_gas();
+		read_dark();
+		read_star();
 
 #ifdef USE_MPI
-		printf("TipsyFile: read file %s\nnbodies: %i\nnsph:    %i\nndark:   %i\nnstar:   %i\nswapped endian: %s\n", \
-			    name, h.nbodies, h.nsph, h.ndark, h.nstar, (swap_endian) ? "yes" : "no");
+		printf("TipsyFile: read file %s\nnbodies: %i\nnsph:    %i\nndark:   %i\nnstar:   %i\nlocal_nsph:    %i\nlocal_ndark:   %i\nlocal_nstar:   %i\nswapped endian: %s\n", \
+			    name, h.nbodies, h.nsph, h.ndark, h.nstar, local_nsph, local_ndark, local_nstar, (swap_endian) ? "yes" : "no");
 
-		// Close file
+		// Close with MPI
 #else
 		printf("TipsyFile: read file %s\nnbodies: %i\nnsph:    %i\nndark:   %i\nnstar:   %i\nswapped endian: %s\n", \
 			    name, h.nbodies, h.nsph, h.ndark, h.nstar, (swap_endian) ? "yes" : "no");
@@ -297,6 +339,7 @@ public:
 		if(src.is_open())
 			src.close();
 #endif
+		open = false;
 		
 	}
 
@@ -308,11 +351,21 @@ public:
 		if(dark) free(dark);
 		if(star) free(star);
 		if(open)
+		{
+#ifdef USE_MPI
+			// Close with MPI
+#else
 			src.close();
+#endif
+			open = false;
+		}
 	}
 
 	void write(std::string name, bool hasPad = true)
 	{
+#ifdef USE_MPI
+		ErrorMessage("write() not supported in parallel reader yet");
+#else
 		// Output file
 		std::ofstream out(name.c_str(), std::ios::binary);
 
@@ -353,6 +406,7 @@ public:
 			out.write((char*)star, sizeof(star_particle) * nstar);
 
 		out.close();
+#endif
 	};
 
 private:
