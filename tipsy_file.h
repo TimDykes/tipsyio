@@ -116,6 +116,7 @@ public:
 
 #ifdef USE_MPI
 	MPI_Comm comm;
+	int comm_size;
 	long sph_start;
 	long dark_start;
 	long star_start;
@@ -124,7 +125,7 @@ public:
 	TipsyFile() { header_read = false; sph = NULL; dark = NULL; star = NULL; is_open = false;}
 
 #ifdef USE_MPI
-	TipsyFile(const char* filename, MPI_Comm comm, int rank, bool swap = true)
+	TipsyFile(const char* filename, MPI_Comm comm, bool swap = true)
 #else
 	TipsyFile(const char* filename, bool swap = true)
 #endif
@@ -135,7 +136,7 @@ public:
 		star = NULL;
 		is_open = false;
 #ifdef USE_MPI
-		open(filename, comm, rank, swap);
+		open(filename, comm, swap);
 #else
 		open(filename, swap);
 #endif
@@ -148,7 +149,7 @@ public:
 		// Also set 'swap endian'
 	}
 #ifdef USE_MPI
-	void open(const char* filename, MPI_Comm c, int r, bool swap = true)
+	void open(const char* filename, MPI_Comm c, bool swap = true)
 #else
 	void open(const char* filename, bool swap = true)
 #endif
@@ -157,7 +158,8 @@ public:
 			ErrorMessage("TipsyFile: File %s is already open!\n", filename);
 #ifdef USE_MPI
 		comm = c;
-		rank = r;
+    	MPI_Comm_rank(comm, &rank);
+    	MPI_Comm_size(comm, &comm_size);
 		MPI_File_open(comm, filename, MPI_MODE_RDONLY, MPI_INFO_NULL, &src);
 #else
 		rank = 0;
@@ -230,9 +232,9 @@ public:
 
 #ifdef USE_MPI
 		// Set local nsph to nsph/nranks
-		local_nsph = h.nsph/nranks;
-		start_sph = local_nsph * rank;
-		local_nsph = std::min(h.nsph-start_nsph, local_nsph);
+		local_nsph = h.nsph/comm_size;
+		sph_start = local_nsph * rank;
+		local_nsph = std::min(h.nsph-sph_start, local_nsph);
 #else
 		// Set local nsph to header nsph
 		local_nsph = h.nsph;
@@ -276,8 +278,8 @@ public:
 #ifdef USE_MPI
 		// Set local ndark to ndark/nranks
 		local_ndark = h.ndark/nranks;
-		start_dark = local_ndark * rank;
-		local_ndark = std::min(h.ndark-start_ndark, local_ndark);
+		dark_start = local_ndark * rank;
+		local_ndark = std::min(h.ndark-dark_start, local_ndark);
 #else
 		// Set local ndark to header ndark
 		local_ndark = h.ndark;
@@ -321,8 +323,8 @@ public:
 #ifdef USE_MPI
 		// Set local nstar to nstar/nranks
 		local_nstar = h.nstar/nranks;
-		start_star = local_nstar * rank;
-		local_nstar = std::min(h.nstar-start_nstar, local_nstar);
+		star_start = local_nstar * rank;
+		local_nstar = std::min(h.nstar-star_start, local_nstar);
 #else
 		// Set local nstar to header nstar
 		local_nstar = h.nstar;
