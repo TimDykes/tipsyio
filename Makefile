@@ -16,8 +16,12 @@ else
 DBG = -O2
 endif
 
+ifeq ($(MPI),1)
+USE_MPI = -DUSE_MPI
+endif
+
 # Options and includes
-OPTS = -Wall $(DBG) 
+OPTS = -Wall $(DBG) $(USE_MPI)
 INCL_PATHS = -I./ 
 
 # Flags for c++ files
