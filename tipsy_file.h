@@ -101,8 +101,8 @@ public:
 	const char* name;
 #ifdef USE_MPI
 	MPI_File src;
-	MPI_offset offset;
-	MPI_status status;
+	MPI_Offset offset;
+	MPI_Status status;
 #else 
 	std::ifstream src;
 #endif
@@ -183,11 +183,11 @@ public:
 			pad = sizeof(int);
 		}
 #ifdef USE_MPI
-			int header_size = size(header)-pad;
+		int header_size = sizeof(header)-pad;
 		if(rank==0)
 		{
 			int read=0;
-			MPI_File_read_at(src, 0, (unsigned char*)&h, header_size, MPI_UNSIGNED_BYTE, &status); 
+			MPI_File_read_at(src, 0, (unsigned char*)&h, header_size, MPI_BYTE, &status); 
 			MPI_Get_count(&status, MPI_INT, &read);
 			printf("TipsyFile: Rank 0 read %d bytes for header size %d\n", read, header_size);
 		}
@@ -198,7 +198,7 @@ public:
 #ifdef USE_MPI
 		// Broadcast header to everyone else
 		// MPI_Bcast
-        MPI_Bcast( &h, header_size, MPI_Datatype MPI_UNSIGNED_BYTE, 0, comm);
+        MPI_Bcast( &h, header_size, MPI_Datatype MPI_BYTE, 0, comm);
 #endif
 		byteswap(&h.time);
         byteswap(&h.nbodies);
@@ -277,7 +277,7 @@ public:
 
 #ifdef USE_MPI
 		// Set local ndark to ndark/nranks
-		local_ndark = h.ndark/nranks;
+		local_ndark = h.ndark/comm_size;
 		dark_start = local_ndark * rank;
 		local_ndark = std::min(h.ndark-dark_start, local_ndark);
 #else
@@ -322,7 +322,7 @@ public:
 
 #ifdef USE_MPI
 		// Set local nstar to nstar/nranks
-		local_nstar = h.nstar/nranks;
+		local_nstar = h.nstar/comm_size;
 		star_start = local_nstar * rank;
 		local_nstar = std::min(h.nstar-star_start, local_nstar);
 #else
