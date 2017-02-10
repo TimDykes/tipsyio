@@ -247,13 +247,15 @@ public:
 		// Read sph
 		if(local_nsph)
 		{
+			int nbytes = local_nsph*sizeof(gas_particle);
 #ifdef USE_MPI
 			// Seek to sph plus local sph start
-			// MPI Read
-#else
+			offset = sizeof(header) + (sph_start * sizeof(gas_particle)); 
+			MPI_File_read_at(src, offset, (char*)sph, nbytes, MPI_BYTE,&status);
+ #else
 			// Seek to file sph start
 			// ...
-			src.read((char*)sph, local_nsph * sizeof(gas_particle));
+			src.read((char*)sph, nbytes);
 #endif
 			if(swap_endian)
 			{
@@ -292,13 +294,15 @@ public:
 		// Read dark
 		if(local_ndark)
 		{
+			int nbytes = local_ndark*sizeof(dark_particle);
 #ifdef USE_MPI
-			// Seek to dark plus local dark start
-			// MPI Read
+			// Seek past sph to dark plus local dark start
+			offset = sizeof(header) + (h.nsph * sizeof(gas_particle)) + (local_ndark * sizeof(dark_particle)); 
+			MPI_File_read_at(src, offset, (char*)dark, nbytes, MPI_BYTE,&status);
 #else
 			// Seek to file dark start
 			// ...
-			src.read((char*)dark, local_ndark * sizeof(dark_particle));
+			src.read((char*)dark, nbytes);
 #endif
 			if(swap_endian)
 			{
@@ -337,9 +341,12 @@ public:
 		// Read star
 		if(local_nstar)
 		{
+			int nbytes = local_nstar*sizeof(star_particle);
 #ifdef USE_MPI
 			// Seek to star plus local star start
-			// MPI Read
+			// Seek past sph to dark plus local dark start 
+			offset = sizeof(header) + (h.nsph * sizeof(gas_particle)) + (h.ndark * sizeof(dark_particle)) + (star_start * sizeof(star_particle)); 
+			MPI_File_read_at(src, offset, (char*)dark, nbytes, MPI_BYTE,&status);
 #else
 			// Seek to file star start
 			// ...
