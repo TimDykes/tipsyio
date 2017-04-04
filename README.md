@@ -1,8 +1,3 @@
-### Tipsy Header 
+### Tipsy I/O 
 
-A simple tool to read and print the header of a tipsy file
-
-```
-make
-./read_header /path/to/tipsy_file.00000
-```
+Testing MPIIO for reading tipsy files
